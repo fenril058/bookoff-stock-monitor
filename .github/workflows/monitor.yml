@@ -1,0 +1,72 @@
+name: BOOKOFF stock monitor
+
+on:
+  schedule:
+    # 10-minute interval, offset from the top of the hour to reduce scheduler congestion.
+    - cron: "3,13,23,33,43,53 * * * *"
+  workflow_dispatch:
+    inputs:
+      test_notification:
+        description: "Send a Discord test notification without checking BOOKOFF"
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+concurrency:
+  group: bookoff-stock-monitor
+  cancel-in-progress: false
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6.0.2
+
+      - name: Set up Python
+        uses: actions/setup-python@v6.2.0
+        with:
+          python-version: "3.13"
+
+      - name: Validate Discord secret
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          if [ -z "$DISCORD_WEBHOOK_URL" ]; then
+            echo "Repository secret DISCORD_WEBHOOK_URL is missing." >&2
+            exit 1
+          fi
+
+      - name: Run parser tests
+        run: python -m unittest discover -s tests -v
+
+      - name: Check stock
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          TEST_NOTIFICATION: ${{ inputs.test_notification }}
+        run: |
+          if [ "$TEST_NOTIFICATION" = "true" ]; then
+            python monitor.py --test-notification
+          else
+            python monitor.py
+          fi
+
+      - name: Commit state transition
+        if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.test_notification) }}
+        run: |
+          if git diff --quiet -- state.json; then
+            echo "No state transition to commit."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add state.json
+          git commit -m "chore: update BOOKOFF stock state [skip ci]"
+          git pull --rebase origin "$GITHUB_REF_NAME"
+          git push origin "HEAD:$GITHUB_REF_NAME"
