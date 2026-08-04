@@ -2,8 +2,8 @@
 """Low-frequency BOOKOFF stock monitor for GitHub Actions.
 
 The monitor performs one public product-page request per configured item, detects
-an availability signal, and sends a Discord notification only when an item
-transitions into AVAILABLE.
+an availability signal, and sends a Discord notification whenever an item is
+AVAILABLE. It intentionally keeps no persistent state.
 """
 
 from __future__ import annotations
@@ -16,7 +16,6 @@ import sys
 import time
 import unicodedata
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from enum import StrEnum
 from html.parser import HTMLParser
 from pathlib import Path
@@ -25,7 +24,6 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 DEFAULT_ITEMS_PATH = Path("items.json")
-DEFAULT_STATE_PATH = Path("state.json")
 REQUEST_TIMEOUT_SECONDS = 20
 MAX_FETCH_ATTEMPTS = 2
 MAX_ITEMS = 10
@@ -230,24 +228,6 @@ def load_items(path: Path) -> list[Item]:
     return items
 
 
-def load_state(path: Path) -> dict[str, Any]:
-    if not path.exists():
-        return {"items": {}}
-    raw = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(raw, dict) or not isinstance(raw.get("items", {}), dict):
-        raise ValueError("state.json has an invalid structure")
-    raw.setdefault("items", {})
-    return raw
-
-
-def atomic_write_json(path: Path, value: dict[str, Any]) -> None:
-    temporary = path.with_suffix(path.suffix + ".tmp")
-    temporary.write_text(
-        json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
-    temporary.replace(path)
-
 
 def fetch_html(item: Item) -> str:
     headers = {
@@ -318,16 +298,9 @@ def format_notification(items: list[Item]) -> str:
     return "\n".join(lines)
 
 
-def utc_now() -> str:
-    return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
-
-
-def run_monitor(items_path: Path, state_path: Path, webhook_url: str) -> int:
+def run_monitor(items_path: Path, webhook_url: str) -> int:
     items = load_items(items_path)
-    state = load_state(state_path)
-    state_items: dict[str, Any] = state["items"]
-    newly_available: list[Item] = []
-    now = utc_now()
+    available_items: list[Item] = []
 
     for index, item in enumerate(items):
         html = fetch_html(item)
@@ -336,49 +309,24 @@ def run_monitor(items_path: Path, state_path: Path, webhook_url: str) -> int:
         if detection.status is StockStatus.UNKNOWN:
             raise RuntimeError(f"Could not determine stock status for {item.name}: {detection.reason}")
 
-        previous_entry = state_items.get(item.id, {})
-        previous_value = previous_entry.get("status", StockStatus.UNKNOWN.value)
-        try:
-            previous_status = StockStatus(previous_value)
-        except ValueError:
-            previous_status = StockStatus.UNKNOWN
-
-        if detection.status is StockStatus.AVAILABLE and previous_status is not StockStatus.AVAILABLE:
-            newly_available.append(item)
-
-        if detection.status is not previous_status:
-            state_items[item.id] = {
-                "name": item.name,
-                "status": detection.status.value,
-                "status_changed_at": now,
-                "url": item.url,
-            }
-        else:
-            previous_entry.setdefault("name", item.name)
-            previous_entry.setdefault("url", item.url)
-            previous_entry.setdefault("status", detection.status.value)
-            state_items[item.id] = previous_entry
+        if detection.status is StockStatus.AVAILABLE:
+            available_items.append(item)
 
         if index + 1 < len(items):
             time.sleep(BETWEEN_ITEMS_DELAY_SECONDS)
 
-    if newly_available:
-        post_discord(webhook_url, format_notification(newly_available))
-        notified_at = utc_now()
-        for item in newly_available:
-            state_items[item.id]["last_notified_at"] = notified_at
-        print(f"Discord notification sent for {len(newly_available)} item(s)")
+    if available_items:
+        post_discord(webhook_url, format_notification(available_items))
+        print(f"Discord notification sent for {len(available_items)} item(s)")
     else:
-        print("No new availability transition; no notification sent")
+        print("No available items; no notification sent")
 
-    atomic_write_json(state_path, state)
     return 0
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--items", type=Path, default=DEFAULT_ITEMS_PATH)
-    parser.add_argument("--state", type=Path, default=DEFAULT_STATE_PATH)
     parser.add_argument("--test-notification", action="store_true")
     return parser.parse_args()
 
@@ -398,7 +346,7 @@ def main() -> int:
             )
             print("Test notification sent")
             return 0
-        return run_monitor(args.items, args.state, webhook_url)
+        return run_monitor(args.items, webhook_url)
     except (RuntimeError, ValueError, json.JSONDecodeError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1

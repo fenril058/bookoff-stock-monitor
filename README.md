@@ -1,17 +1,32 @@
 # BOOKOFF Stock Monitor
 
-BOOKOFF公式オンラインストアの商品ページを低頻度で確認し、商品が「在庫あり」に変わったときだけDiscordへ通知する個人用GitHub Actionsです。
+BOOKOFF公式オンラインストアの商品ページを低頻度で確認し、現在「在庫あり」と判定できた場合にDiscordへ通知する個人用GitHub Actionsです。
 
 - 初期設定は「ねこくま、めしくま」
 - 10分間隔
+- 状態管理なし、リポジトリへの自動書き込みなし
 - 1商品につき1回のページ取得（通信失敗時のみ最大1回再試行）
 - 自動ログイン・CAPTCHA回避・自動購入は行いません
 - 最大10商品に制限しています
 - 外部Pythonパッケージは不要です
 
+## 通知の挙動
+
+永続的な状態を保存しないため、各実行はその時点の在庫だけを判定します。
+
+```text
+在庫なし  → 通知しない
+在庫あり  → 通知する
+判定不能  → 通知せずWorkflowを失敗させる
+```
+
+在庫が残っている間は、10分ごとの実行で繰り返し通知されます。購入できた後は、Actions画面でWorkflowを無効化するか、`items.json`から商品を削除してください。
+
 ## 1. リポジトリを作る
 
 GitHubで新しいリポジトリを作成し、このフォルダの中身をそのままアップロードします。公開リポジトリでも、Discord Webhook URLをRepository Secretに保存すればコードには公開されません。
+
+Workflowの権限は`contents: read`だけです。`actions/checkout`にも`persist-credentials: false`を設定しており、Gitの認証情報を後続ステップへ残しません。
 
 ## 2. Discord Webhookを作る
 
@@ -28,20 +43,20 @@ Discordの通知先サーバーで、対象チャンネルの設定からWebhook
 | Name | `DISCORD_WEBHOOK_URL` |
 | Secret | DiscordでコピーしたWebhook URL |
 
-Webhook URLを `items.json`、README、Issue、Actionsログへ貼り付けないでください。
+Webhook URLを`items.json`、README、Issue、Actionsログへ貼り付けないでください。
 
 ## 4. テスト通知を送る
 
-1. `Actions` タブを開く
-2. `BOOKOFF stock monitor` を選択
-3. `Run workflow` を押す
-4. `Send a Discord test notification...` をオンにして実行
+1. `Actions`タブを開く
+2. `BOOKOFF stock monitor`を選択
+3. `Run workflow`を押す
+4. `Send a Discord test notification...`をオンにして実行
 
 Discordにテスト通知が届けば設定完了です。
 
 ## 5. 監視商品を追加・変更する
 
-`items.json` を編集します。
+`items.json`を編集します。
 
 ```json
 [
@@ -55,22 +70,9 @@ Discordにテスト通知が届けば設定完了です。
 
 - `id`: リポジトリ内で重複しない識別子
 - `name`: 商品ページに表示される商品名
-- `url`: `https://shopping.bookoff.co.jp/` で始まる商品URL
+- `url`: `https://shopping.bookoff.co.jp/`で始まる商品URL
 
 複数商品を設定した場合、各商品へのアクセス間に1秒の間隔を入れます。サイト負荷を抑えるため、最大10商品です。
-
-## 通知条件
-
-通知するのは、前回状態が `AVAILABLE` 以外で、今回 `AVAILABLE` と判定された場合だけです。
-
-```text
-OUT_OF_STOCK → AVAILABLE  通知する
-AVAILABLE    → AVAILABLE  通知しない
-AVAILABLE    → OUT_OF_STOCK 通知しない
-OUT_OF_STOCK → OUT_OF_STOCK 通知しない
-```
-
-状態は `state.json` に保存され、状態が変化したときだけGitHub Actionsが自動コミットします。商品名・URL・在庫状態だけで、秘密情報は入りません。
 
 ## 判定方法
 
@@ -82,7 +84,7 @@ OUT_OF_STOCK → OUT_OF_STOCK 通知しない
 
 ## 実行間隔を変える
 
-`.github/workflows/monitor.yml` のcronを編集します。現在は毎時3、13、23、33、43、53分です。
+`.github/workflows/monitor.yml`のcronを編集します。現在は毎時3、13、23、33、43、53分です。
 
 ```yaml
 - cron: "3,13,23,33,43,53 * * * *"
@@ -92,7 +94,7 @@ OUT_OF_STOCK → OUT_OF_STOCK 通知しない
 
 ## 公開リポジトリの注意
 
-GitHubでは、公開リポジトリに60日間アクティビティがない場合、scheduled workflowが自動的に無効化されることがあります。Actionsタブから再度有効化してください。本ツールは状態変化時にコミットしますが、長期間変化がなければこの条件に該当し得ます。
+公開リポジトリに長期間アクティビティがない場合、scheduled workflowが自動的に無効化されることがあります。Actionsタブから再度有効化してください。この構成は自動コミットを行わないため、リポジトリのアクティビティは増えません。
 
 ## ローカルテスト
 
@@ -105,6 +107,15 @@ python -m unittest discover -s tests -v
 ```bash
 export DISCORD_WEBHOOK_URL='https://discord.com/api/webhooks/...'
 python monitor.py --test-notification
+```
+
+## セキュリティチェック
+
+Action参照はコミットSHAに固定しています。更新後は次を実行してください。
+
+```bash
+pinact run
+zizmor -- .github/workflows/
 ```
 
 ## 利用上の注意

@@ -52,45 +52,41 @@ class DetectStockTests(unittest.TestCase):
         self.assertEqual(detection.status, StockStatus.UNKNOWN)
 
 
-class StateTransitionTests(unittest.TestCase):
-    def test_notifies_only_on_transition_to_available(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary_directory:
-            root = Path(temporary_directory)
-            items_path = root / "items.json"
-            state_path = root / "state.json"
-            items_path.write_text(
-                json.dumps(
-                    [
-                        {
-                            "id": "0019040704",
-                            "name": "ねこくま、めしくま",
-                            "url": "https://shopping.bookoff.co.jp/used/0019040704",
-                        }
-                    ],
-                    ensure_ascii=False,
-                ),
-                encoding="utf-8",
-            )
-            state_path.write_text('{"items": {}}', encoding="utf-8")
+class MonitorNotificationTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temporary_directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary_directory.cleanup)
+        self.items_path = Path(self.temporary_directory.name) / "items.json"
+        self.items_path.write_text(
+            json.dumps(
+                [
+                    {
+                        "id": "0019040704",
+                        "name": "ねこくま、めしくま",
+                        "url": "https://shopping.bookoff.co.jp/used/0019040704",
+                    }
+                ],
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
 
-            out_html = "<html><body><h1>ねこくま、めしくま</h1><p>在庫なし</p></body></html>"
-            available_html = "<html><body><h1>ねこくま、めしくま</h1><button>カートに入れる</button></body></html>"
+    def test_out_of_stock_does_not_notify(self) -> None:
+        html = "<html><body><h1>ねこくま、めしくま</h1><p>在庫なし</p></body></html>"
 
-            with patch("monitor.fetch_html", return_value=out_html), patch("monitor.post_discord") as post:
-                run_monitor(items_path, state_path, "https://example.invalid/webhook")
-                post.assert_not_called()
+        with patch("monitor.fetch_html", return_value=html), patch("monitor.post_discord") as post:
+            run_monitor(self.items_path, "https://example.invalid/webhook")
 
-            with patch("monitor.fetch_html", return_value=available_html), patch("monitor.post_discord") as post:
-                run_monitor(items_path, state_path, "https://example.invalid/webhook")
-                post.assert_called_once()
+        post.assert_not_called()
 
-            with patch("monitor.fetch_html", return_value=available_html), patch("monitor.post_discord") as post:
-                run_monitor(items_path, state_path, "https://example.invalid/webhook")
-                post.assert_not_called()
+    def test_available_notifies_on_every_run(self) -> None:
+        html = "<html><body><h1>ねこくま、めしくま</h1><button>カートに入れる</button></body></html>"
 
-            saved = json.loads(state_path.read_text(encoding="utf-8"))
-            self.assertEqual(saved["items"]["0019040704"]["status"], "AVAILABLE")
-            self.assertIn("last_notified_at", saved["items"]["0019040704"])
+        with patch("monitor.fetch_html", return_value=html), patch("monitor.post_discord") as post:
+            run_monitor(self.items_path, "https://example.invalid/webhook")
+            run_monitor(self.items_path, "https://example.invalid/webhook")
+
+        self.assertEqual(post.call_count, 2)
 
 
 if __name__ == "__main__":
