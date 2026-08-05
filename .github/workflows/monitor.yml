@@ -1,9 +1,20 @@
 name: BOOKOFF stock monitor
 
+
 on:
   schedule:
-    # 10-minute interval, offset from the top of the hour to reduce scheduler congestion.
-    - cron: "3,13,23,33,43,53 * * * *"
+    # 05:07〜06:57 JST: 10分間隔
+    # 11:07〜12:57 JST: 10分間隔
+    - cron: "7,17,27,37,47,57 5,6,11,12 * * *"
+      timezone: "Asia/Tokyo"
+
+    # 07:03〜10:58 JST: 5分間隔（重点監視）
+    - cron: "3/5 7-10 * * *"
+      timezone: "Asia/Tokyo"
+
+    # 13:07〜22:37 JST: 30分間隔（保険）
+    - cron: "7,37 13-22 * * *"
+      timezone: "Asia/Tokyo"
   workflow_dispatch:
     inputs:
       test_notification:
