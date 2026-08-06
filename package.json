@@ -1,0 +1,29 @@
+{
+  "name": "bookoff-stock-monitor",
+  "version": "1.0.0",
+  "description": "BOOKOFF公式オンラインストアの商品ページを低頻度で確認し、現在「在庫あり」と判定できた場合にDiscordへ通知する個人用GitHub Actionsです。",
+  "main": "index.js",
+  "directories": {
+    "test": "tests"
+  },
+  "scripts": {
+    "dev": "wrangler dev --test-scheduled",
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fenril058/bookoff-stock-monitor.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/fenril058/bookoff-stock-monitor/issues"
+  },
+  "homepage": "https://github.com/fenril058/bookoff-stock-monitor#readme",
+  "devDependencies": {
+    "wrangler": "^4.119.0"
+  }
+}
