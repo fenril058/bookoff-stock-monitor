@@ -25,29 +25,27 @@ export function detectStock(html) {
     };
   }
 
-  const hasSoldOutMarker = html.includes("在庫なし");
-  const hasAvailableMarker = html.includes("在庫あり");
-  const hasCartMarker = CART_MARKERS.some((marker) => html.includes(marker));
+  // エラーメッセージはカートボタンとして数えない
+  const normalizedHtml = html.replaceAll(
+    "カートに追加できませんでした",
+    "",
+  );
 
-  // ページ構造変更や関連商品による曖昧な判定を防ぐ
-  if (hasSoldOutMarker && hasAvailableMarker) {
-    return {
-      status: "unknown",
-      reason: "Both sold-out and available markers were found",
-    };
-  }
+  const hasCartMarker = CART_MARKERS.some((marker) =>
+    normalizedHtml.includes(marker),
+  );
 
-  if (hasSoldOutMarker) {
-    return {
-      status: "sold_out",
-      reason: 'Found "在庫なし"',
-    };
-  }
-
-  if (hasAvailableMarker && hasCartMarker) {
+  if (hasCartMarker) {
     return {
       status: "available",
-      reason: 'Found "在庫あり" and cart marker',
+      reason: "Found cart marker",
+    };
+  }
+
+  if (html.includes("在庫なし")) {
+    return {
+      status: "sold_out",
+      reason: 'Found "在庫なし" without cart marker',
     };
   }
 
@@ -69,7 +67,7 @@ async function fetchStock() {
       Accept: "text/html,application/xhtml+xml",
       "Accept-Language": "ja-JP,ja;q=0.9",
       "User-Agent":
-        "bookoff-stock-monitor/1.0 (+https://github.com/fenril058/bookoff-stock-monitor)",
+      "bookoff-stock-monitor/1.0 (+https://github.com/fenril058/bookoff-stock-monitor)",
     },
   });
 
