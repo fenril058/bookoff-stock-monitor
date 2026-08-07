@@ -25,5 +25,9 @@
   "homepage": "https://github.com/fenril058/bookoff-stock-monitor#readme",
   "devDependencies": {
     "wrangler": "^4.119.0"
+  },
+  "allowScripts": {
+    "file:../../../../../../../nix/store/8qk02nzbf1f144ydha8665lr9j546kij-bookoff-stock-monitor-node-modules-1.0.0/node_modules/esbuild": true,
+    "file:../../../../../../../nix/store/8qk02nzbf1f144ydha8665lr9j546kij-bookoff-stock-monitor-node-modules-1.0.0/node_modules/workerd": true
   }
 }
